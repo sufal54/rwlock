@@ -12,19 +12,18 @@ class RwLock<T> {
         this.value = value;
     }
 
-    async reads(): Promise<[T, UnlockFn]> {
-        if (!this.writer && this.writeQueue.length == 0) {
-            this.readers++;
-            return [this.value, () => this.releaseRead()]
-        }
-
+    async read(): Promise<[T, UnlockFn]> {
         return new Promise((res) => {
             const tryLock = () => {
-                this.readers++;
-                res([this.value, () => this.releaseRead()]);
-            }
-            this.readQueue.push(tryLock);
-        })
+                if (!this.writer && this.writeQueue.length === 0) {
+                    this.readers++;
+                    res([this.value, () => this.releaseRead()]);
+                } else {
+                    this.readQueue.push(tryLock);
+                }
+            };
+            tryLock();
+        });
     }
 
     async write(): Promise<[T, DoneFn]> {
@@ -57,8 +56,12 @@ class RwLock<T> {
     }
 
     private releaseRead() {
-        this.readers--;
-        this.next();
+        if (this.readers > 0) {
+            this.readers--;
+            this.next();
+        } else {
+            throw new Error("RwLock: releaseRead called too many times");
+        }
     }
 
     private setReleaseWrite(newValue: T) {
@@ -73,14 +76,13 @@ class RwLock<T> {
     }
 
     private next() {
-        if (!this.writer && this.readers == 0 && this.writeQueue.length > 0) {
+        if (!this.writer && this.readers === 0 && this.writeQueue.length > 0) {
             const nextWriter = this.writeQueue.shift()!;
             nextWriter();
-        } else if (!this.writer && this.writeQueue.length == 0) {
-
+        } else if (!this.writer && this.writeQueue.length === 0) {
             while (this.readQueue.length > 0) {
                 const nextReader = this.readQueue.shift()!;
-                nextReader()
+                nextReader();
             }
         }
     }

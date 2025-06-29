@@ -19,7 +19,7 @@ class RwLock {
     }
     reads() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.writer) {
+            if (!this.writer && this.writeQueue.length == 0) {
                 this.readers++;
                 return [this.value, () => this.releaseRead()];
             }
@@ -76,7 +76,7 @@ class RwLock {
         this.next();
     }
     next() {
-        if (this.writer && this.readers == 0 && this.writeQueue.length > 0) {
+        if (!this.writer && this.readers == 0 && this.writeQueue.length > 0) {
             const nextWriter = this.writeQueue.shift();
             nextWriter();
         }
