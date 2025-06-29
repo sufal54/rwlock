@@ -13,7 +13,7 @@ class RwLock<T> {
     }
 
     async reads(): Promise<[T, UnlockFn]> {
-        if (!this.writer) {
+        if (!this.writer && this.writeQueue.length == 0) {
             this.readers++;
             return [this.value, () => this.releaseRead()]
         }
@@ -73,7 +73,7 @@ class RwLock<T> {
     }
 
     private next() {
-        if (this.writer && this.readers == 0 && this.writeQueue.length > 0) {
+        if (!this.writer && this.readers == 0 && this.writeQueue.length > 0) {
             const nextWriter = this.writeQueue.shift()!;
             nextWriter();
         } else if (!this.writer && this.writeQueue.length == 0) {
