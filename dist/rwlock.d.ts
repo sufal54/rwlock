@@ -3,16 +3,15 @@ type DoneFn = () => void;
 declare class RwLock<T> {
     private readers;
     private writer;
-    private readQueue;
-    private writeQueue;
+    private queue;
     private value;
     constructor(value: T);
-    reads(): Promise<[T, UnlockFn]>;
+    read(): Promise<[T, UnlockFn]>;
     write(): Promise<[T, DoneFn]>;
-    setWrite(): Promise<[T, (newValue: T) => void]>;
+    setWrite(): Promise<[T, (val: T) => void]>;
     private releaseRead;
-    private setReleaseWrite;
     private releaseWrite;
-    private next;
+    private setReleaseWrite;
+    private processQueue;
 }
 export default RwLock;

@@ -1,6 +1,6 @@
 {
   "name": "@sufalctl/rwlock",
-  "version": "1.0.7",
+  "version": "2.0.0",
   "description": "",
   "main": "dist/rwlock.js",
   "types": "dist/rwlock.d.ts",

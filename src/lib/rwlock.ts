@@ -1,11 +1,15 @@
 type UnlockFn = () => void;
 type DoneFn = () => void;
 
+type LockTask = {
+    type: 'read' | 'write';
+    fn: () => void;
+};
+
 class RwLock<T> {
     private readers = 0;
     private writer = false;
-    private readQueue: (() => void)[] = [];
-    private writeQueue: (() => void)[] = [];
+    private queue: LockTask[] = [];
     private value: T;
 
     constructor(value: T) {
@@ -14,76 +18,73 @@ class RwLock<T> {
 
     read(): Promise<[T, UnlockFn]> {
         return new Promise((resolve) => {
-            const attempt = () => {
-                if (!this.writer && this.writeQueue.length === 0) {
-                    this.readers++;
-                    resolve([this.value, () => this.releaseRead()]);
-                } else {
-                    this.readQueue.push(attempt);
-                }
+            const task = () => {
+                this.readers++;
+                resolve([this.value, () => this.releaseRead()]);
             };
-            this.enqueue(attempt);
+
+            this.queue.push({ type: 'read', fn: task });
+            this.processQueue();
         });
     }
 
     write(): Promise<[T, DoneFn]> {
         return new Promise((resolve) => {
-            const attempt = () => {
-                if (!this.writer && this.readers === 0) {
-                    this.writer = true;
-                    resolve([this.value, () => this.releaseWrite()]);
-                } else {
-                    this.writeQueue.push(attempt);
-                }
+            const task = () => {
+                this.writer = true;
+                resolve([this.value, () => this.releaseWrite()]);
             };
-            this.enqueue(attempt);
+
+            this.queue.push({ type: 'write', fn: task });
+            this.processQueue();
         });
     }
 
-    setWrite(): Promise<[T, (newValue: T) => void]> {
+    setWrite(): Promise<[T, (val: T) => void]> {
         return new Promise((resolve) => {
-            const attempt = () => {
-                if (!this.writer && this.readers === 0) {
-                    this.writer = true;
-                    resolve([this.value, (val: T) => this.setReleaseWrite(val)]);
-                } else {
-                    this.writeQueue.push(attempt);
-                }
+            const task = () => {
+                this.writer = true;
+                resolve([this.value, (val: T) => this.setReleaseWrite(val)]);
             };
-            this.enqueue(attempt);
-        });
-    }
 
-    private enqueue(fn: () => void) {
-        // Ensures function is run after current stack
-        setImmediate(fn);
+            this.queue.push({ type: 'write', fn: task });
+            this.processQueue();
+        });
     }
 
     private releaseRead() {
         this.readers--;
-        if (this.readers < 0) throw new Error("releaseRead called too many times");
-        this.next();
+        if (this.readers < 0) throw new Error("Too many releaseRead calls");
+        this.processQueue();
     }
 
     private releaseWrite() {
         this.writer = false;
-        this.next();
+        this.processQueue();
     }
 
-    private setReleaseWrite(newValue: T) {
-        this.value = newValue;
+    private setReleaseWrite(val: T) {
+        this.value = val;
         this.writer = false;
-        this.next();
+        this.processQueue();
     }
 
-    private next() {
-        if (!this.writer && this.readers === 0 && this.writeQueue.length > 0) {
-            const writer = this.writeQueue.shift()!;
-            writer();
-        } else if (!this.writer && this.writeQueue.length === 0) {
-            while (this.readQueue.length > 0) {
-                const reader = this.readQueue.shift()!;
-                reader();
+    private processQueue() {
+        if (this.writer) return;
+
+        while (this.queue.length > 0) {
+            const next = this.queue[0];
+
+            if (next.type === 'read') {
+                if (this.queue.some(q => q.type === 'write')) break; // block if a write is ahead
+                this.queue.shift();
+                next.fn();
+            } else if (next.type === 'write') {
+                if (this.readers === 0) {
+                    this.queue.shift();
+                    next.fn();
+                }
+                break;
             }
         }
     }
