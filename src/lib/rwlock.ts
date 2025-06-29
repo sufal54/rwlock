@@ -12,53 +12,56 @@ class RwLock<T> {
         this.value = value;
     }
 
-    async read(): Promise<[T, UnlockFn]> {
-        return new Promise((res) => {
-            const tryLock = () => {
-                // Only allow read if no active writer and no writer waiting
+    read(): Promise<[T, UnlockFn]> {
+        return new Promise((resolve) => {
+            const attempt = () => {
                 if (!this.writer && this.writeQueue.length === 0) {
                     this.readers++;
-                    res([this.value, () => this.releaseRead()]);
+                    resolve([this.value, () => this.releaseRead()]);
                 } else {
-                    this.readQueue.push(tryLock);
+                    this.readQueue.push(attempt);
                 }
             };
-            tryLock(); // Immediately attempt
+            this.enqueue(attempt);
         });
     }
 
-    async write(): Promise<[T, DoneFn]> {
-        return new Promise((res) => {
-            const tryLock = () => {
+    write(): Promise<[T, DoneFn]> {
+        return new Promise((resolve) => {
+            const attempt = () => {
                 if (!this.writer && this.readers === 0) {
                     this.writer = true;
-                    res([this.value, () => this.releaseWrite()]);
+                    resolve([this.value, () => this.releaseWrite()]);
                 } else {
-                    this.writeQueue.push(tryLock);
+                    this.writeQueue.push(attempt);
                 }
             };
-            tryLock(); // Immediately attempt
+            this.enqueue(attempt);
         });
     }
 
-    async setWrite(): Promise<[T, (newValue: T) => void]> {
-        return new Promise((res) => {
-            const tryLock = () => {
+    setWrite(): Promise<[T, (newValue: T) => void]> {
+        return new Promise((resolve) => {
+            const attempt = () => {
                 if (!this.writer && this.readers === 0) {
                     this.writer = true;
-                    res([this.value, (newValue: T) => this.setReleaseWrite(newValue)]);
+                    resolve([this.value, (val: T) => this.setReleaseWrite(val)]);
                 } else {
-                    this.writeQueue.push(tryLock);
+                    this.writeQueue.push(attempt);
                 }
             };
-            tryLock(); // Immediately attempt
+            this.enqueue(attempt);
         });
+    }
+
+    private enqueue(fn: () => void) {
+        // Ensures function is run after current stack
+        setImmediate(fn);
     }
 
     private releaseRead() {
-        if (--this.readers < 0) {
-            throw new Error("RwLock: releaseRead called too many times");
-        }
+        this.readers--;
+        if (this.readers < 0) throw new Error("releaseRead called too many times");
         this.next();
     }
 
@@ -74,16 +77,13 @@ class RwLock<T> {
     }
 
     private next() {
-        // Priority: Writer if no one else active
         if (!this.writer && this.readers === 0 && this.writeQueue.length > 0) {
-            const nextWriter = this.writeQueue.shift()!;
-            nextWriter();
-        }
-        // If no writers, allow all readers
-        else if (!this.writer && this.writeQueue.length === 0) {
+            const writer = this.writeQueue.shift()!;
+            writer();
+        } else if (!this.writer && this.writeQueue.length === 0) {
             while (this.readQueue.length > 0) {
-                const nextReader = this.readQueue.shift()!;
-                nextReader();
+                const reader = this.readQueue.shift()!;
+                reader();
             }
         }
     }
