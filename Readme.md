@@ -19,7 +19,7 @@ import RwLock from "./RwLock"; // adjust the path as needed
 // Create a new lock with an initial value
 const lock = new RwLock<number>(0);
 // Acquire a read lock
-const [value, unlock] = await lock.reads();
+const [value, unlock] = await lock.read();
 
 // Use the value
 console.log("Read value:", value);
