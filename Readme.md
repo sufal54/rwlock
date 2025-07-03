@@ -45,3 +45,59 @@ console.log("Previous value:", oldValue);
 // Update the value and release the lock
 set(oldValue + 1);
 ```
+
+# 🗃 Using with fs.promises (Node.js File System)
+
+You can use RwLock<FileHandle> to safely manage access to a file, ensuring no race conditions during concurrent reads or writes.
+
+## 📦 Import
+
+```ts
+import fs from "node:fs/promises";
+import RwLock from "./RwLock";
+
+const filePath = "./example.txt";
+
+// Open the file
+const handle = await fs.open(filePath, "w+");
+
+// Wrap the file handle with the RwLock
+const fileLock = new RwLock(handle);
+
+async function safeRead() {
+  const [reader, unlock] = await fileLock.read();
+
+  try {
+    const { size } = await reader.stat();
+    const buffer = Buffer.alloc(size);
+    await reader.read(buffer, 0, size, 0);
+    console.log("Read:", buffer.toString());
+  } finally {
+    unlock();
+  }
+}
+
+async function safeWrite(content: string) {
+  const [writer, done] = await fileLock.write();
+
+  try {
+    await writer.truncate(0); // Clear previous content
+    await writer.writeFile(content);
+    console.log("Wrote:", content);
+  } finally {
+    done();
+  }
+}
+
+// Example
+await safeWrite("Hello from RwLock!");
+await safeRead();
+
+await Promise.all([safeRead(), safeRead()]); // Optional concurrent reads
+
+await safeWrite("New exclusive write");
+await safeRead();
+
+// Cleanup
+await handle.close();
+```
