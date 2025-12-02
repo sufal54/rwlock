@@ -1,8 +1,8 @@
 # 🔐 RwLock<T> – TypeScript Read-Write Lock (Usage Guide)
 
-A lightweight asynchronous read-write lock that allows:
+A lightweight asynchronous read-write lock that allows:-
 
-- ✅ Multiple concurrent readers
+- ✅ Multiple concurrent handles
 - ✅ Exclusive single writer
 - ✅ FIFO queuing
 - ✅ Async/await support
@@ -83,6 +83,62 @@ async function safeWrite(content: string) {
   try {
     await writer.truncate(0); // Clear previous content
     await writer.writeFile(content);
+    console.log("Wrote:", content);
+  } finally {
+    done();
+  }
+}
+
+// Example
+await safeWrite("Hello from RwLock!");
+await safeRead();
+
+await Promise.all([safeRead(), safeRead()]); // Optional concurrent reads
+
+await safeWrite("New exclusive write");
+await safeRead();
+
+// Cleanup
+await handle.close();
+```
+
+# 🗃 Recommended Smart way fs.promises (Node.js File System)
+
+You can use RwLock<Unique Identifier> to safely manage access to a file, ensuring no race conditions during concurrent reads or writes.
+
+## 📦 Import
+
+```ts
+import fs from "node:fs/promises";
+import RwLock from "./RwLock";
+
+const filePath = "./example.txt";
+
+// Give a unique value to identify the file you what to use
+const fileLock = new RwLock(filePath); // Here i just take the file path name to identify the file
+
+async function safeRead() {
+  const [_, unlock] = await fileLock.read(); // no need to take value we use smart way
+
+  try {
+    const file = await fs.open(filePath, "w+");
+
+    const { size } = await file.stat();
+    const buffer = Buffer.alloc(size);
+    await file.read(buffer, 0, size, 0);
+    console.log("Read:", buffer.toString());
+  } finally {
+    unlock();
+  }
+}
+
+async function safeWrite(content: string) {
+  const [_, done] = await fileLock.write(); // no need to take value we use smart way
+
+  try {
+    const file = await fs.open(filePath, "w+");
+    await file.truncate(0); // Clear previous content
+    await file.writeFile(content);
     console.log("Wrote:", content);
   } finally {
     done();
